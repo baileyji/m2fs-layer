@@ -1,0 +1,3 @@
+FILESEXTRAPATHS:="${THISDIR}/${PN}-${PV}"
+
+PINC="1"

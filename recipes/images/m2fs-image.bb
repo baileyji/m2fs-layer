@@ -7,7 +7,7 @@ DEPENDS += ""
 IMAGE_INSTALL += " \
   man \
   man-pages \
-  python \
+  python-dev \
   python-core \
   python-modules \
   python-numpy \
@@ -17,7 +17,6 @@ IMAGE_INSTALL += " \
   vim \
   gdb \
   git \
-  task-native-sdk \
   kernel-modules \
   dosfstools \
   i2c-tools \
@@ -26,6 +25,8 @@ IMAGE_INSTALL += " \
   groff \
   media-ctl \
   yavta \
+  nfs-utils \
+  task-native-sdk \
 "
 
 export IMAGE_BASENAME = "m2fs-image"

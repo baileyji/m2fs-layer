@@ -26,6 +26,8 @@ IMAGE_INSTALL += " \
   media-ctl \
   yavta \
   nfs-utils \
+  samba \
+  connman-tests \
   task-native-sdk \
 "
 

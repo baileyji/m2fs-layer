@@ -8,5 +8,5 @@ SRC_URI += "file://beagle/linux-0002-Add-support-for-RTC-backup-battery-recharge
             file://beagle/add-support-for-flscam.patch \
             file://beagle/linux-0005-Put-the-IVA2-DPLL-in-stop-mode-before-un-reset-IVA2.patch \
 "
-
+#            file://beagle/add-support-for-flscam.patch \
 #            file://beagle/linux-0003-Add-support-for-Aptina-MT9P031-sensor-to-BBxM.patch \

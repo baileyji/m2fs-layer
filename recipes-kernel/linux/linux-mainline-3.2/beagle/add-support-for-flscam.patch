@@ -8,7 +8,7 @@ index b009f17..2a052fb 100644
  obj-$(CONFIG_MACH_OMAP_APOLLON)		+= board-apollon.o
 -obj-$(CONFIG_MACH_OMAP3_BEAGLE)		+= board-omap3beagle.o
 +obj-$(CONFIG_MACH_OMAP3_BEAGLE)		+= board-omap3beagle.o \
-+					+= board-omap3beagle-camera.o
++					board-omap3beagle-camera.o
  obj-$(CONFIG_MACH_DEVKIT8000)     	+= board-devkit8000.o
  obj-$(CONFIG_MACH_OMAP_LDP)		+= board-ldp.o
  obj-$(CONFIG_MACH_OMAP3530_LV_SOM)      += board-omap3logic.o
@@ -108,6 +108,21 @@ diff --git a/arch/arm/mach-omap2/board-omap3beagle.c b/arch/arm/mach-omap2/board
 index a7d81fc..b5aed00 100644
 --- a/arch/arm/mach-omap2/board-omap3beagle.c
 +++ b/arch/arm/mach-omap2/board-omap3beagle.c
+@@ -523,6 +523,14 @@ static struct regulator_init_data usb_power = {
+ 
+ static struct gpio_led gpio_leds[];
+ 
++static struct regulator_consumer_supply beagle_vaux3_supply = {
++	.supply		= "cam_1v8",
++};
++
++static struct regulator_consumer_supply beagle_vaux4_supply = {
++	.supply		= "cam_2v8",
++};
++
+ static int beagle_twl_gpio_setup(struct device *dev,
+ 		unsigned gpio, unsigned ngpio)
+ {
 @@ -626,12 +626,45 @@ static struct regulator_init_data beagle_vsim = {
  	.consumer_supplies	= beagle_vsim_supply,
  };
@@ -189,7 +204,7 @@ new file mode 100644
 index 0000000..5ace9f1
 --- /dev/null
 +++ b/drivers/media/video/flscam.c
-@@ -0,0 +1,626 @@
+@@ -0,0 +1,619 @@
 +/*
 + * Driver for FLSCAM CMOS Image Sensor
 + *
@@ -205,13 +220,14 @@ index 0000000..5ace9f1
 + * published by the Free Software Foundation.
 + */
 +
-+#include <linux/delay.h>
++#include <linux/delay.h
 +#include <linux/device.h>
 +#include <linux/module.h>
 +#include <linux/i2c.h>
 +#include <linux/log2.h>
 +#include <linux/pm.h>
 +#include <linux/slab.h>
++#include <linux/gpio.h>
 +#include <media/v4l2-subdev.h>
 +#include <linux/videodev2.h>
 +
@@ -383,7 +399,6 @@ index 0000000..5ace9f1
 +//OK
 +static int flscam_set_params(struct flscam *flscam)
 +{
-+	struct i2c_client *client = v4l2_get_subdevdata(&flscam->subdev);
 +	struct v4l2_mbus_framefmt *format = &flscam->format;
 +	int ret;
 +
@@ -492,7 +507,7 @@ index 0000000..5ace9f1
 +	__format = __flscam_get_pad_format(flscam, fh, format->pad,
 +					    format->which);
 +
-+	if (format->width==FLSCAM_PIXEL_ARRAY_WIDTH1) {
++	if (__format->width==FLSCAM_PIXEL_ARRAY_WIDTH1) {
 +		__format->width = FLSCAM_PIXEL_ARRAY_WIDTH1;
 +		__format->height = FLSCAM_PIXEL_ARRAY_HEIGHT1;
 +	} else {
@@ -512,11 +527,7 @@ index 0000000..5ace9f1
 +
 +static int flscam_s_ctrl(struct v4l2_ctrl *ctrl)
 +{
-+	struct flscam *flscam =
-+			container_of(ctrl->handler, struct flscam, ctrls);
-+	struct i2c_client *client = v4l2_get_subdevdata(&flscam->subdev);
-+	u16 data;
-+	int ret;
++	struct flscam *flscam = container_of(ctrl->handler, struct flscam, ctrls);
 +
 +	switch (ctrl->id) {
 +	case V4L2_CID_EXPOSURE:
@@ -529,7 +540,7 @@ index 0000000..5ace9f1
 +			return flscam_control_clear_set(flscam, FLSCAM_TEST_PATTERN_ENABLE, 0);
 +		}
 +
-+		return flscam_control_clear_set(flscam, 0 FLSCAM_TEST_PATTERN_ENABLE);
++		return flscam_control_clear_set(flscam, 0, FLSCAM_TEST_PATTERN_ENABLE);
 +	}
 +	return 0;
 +}
@@ -629,7 +640,6 @@ index 0000000..5ace9f1
 +//OK
 +static int flscam_open(struct v4l2_subdev *subdev, struct v4l2_subdev_fh *fh)
 +{
-+	struct flscam *flscam = to_flscam(subdev);
 +	struct v4l2_mbus_framefmt *format;
 +
 +	format = v4l2_subdev_get_try_format(fh, 0);
@@ -724,9 +734,7 @@ index 0000000..5ace9f1
 +
 +	//Leaving in for now, but it does nothing
 +	v4l2_ctrl_new_std(&flscam->ctrls, &flscam_ctrl_ops,
-+			  V4L2_CID_EXPOSURE, FLSCAM_SHUTTER_WIDTH_MIN,
-+			  FLSCAM_SHUTTER_WIDTH_MAX, 1,
-+			  FLSCAM_SHUTTER_WIDTH_DEF);
++			  V4L2_CID_EXPOSURE, 1, 100, 1, 5);
 +
 +	for (i = 0; i < ARRAY_SIZE(flscam_ctrls); ++i)
 +		v4l2_ctrl_new_custom(&flscam->ctrls, &flscam_ctrls[i], NULL);
@@ -750,8 +758,8 @@ index 0000000..5ace9f1
 +
 +	flscam->format.code = V4L2_MBUS_FMT_Y8_1X8;
 +
-+	flscam->format.width = FLSCAM_WINDOW_WIDTH_DEF;
-+	flscam->format.height = FLSCAM_WINDOW_HEIGHT_DEF;
++	flscam->format.width = FLSCAM_PIXEL_ARRAY_WIDTH0;
++	flscam->format.height = FLSCAM_PIXEL_ARRAY_HEIGHT0;
 +	flscam->format.field = V4L2_FIELD_NONE;
 +	flscam->format.colorspace = V4L2_COLORSPACE_SRGB;
 +

@@ -5,8 +5,7 @@ FILESEXTRAPATHS_prepend := "${THISDIR}/linux-mainline-3.2:"
 MACHINE_KERNEL_PR_append = "b"
 
 SRC_URI += "file://beagle/linux-0002-Add-support-for-RTC-backup-battery-recharge.patch \
-            file://beagle/add-support-for-flscam-0001.patch \
-            file://beagle/add-support-for-flscam-0002.patch \
+            file://beagle/add-support-for-flscam.patch \
             file://beagle/linux-0005-Put-the-IVA2-DPLL-in-stop-mode-before-un-reset-IVA2.patch \
 "
 

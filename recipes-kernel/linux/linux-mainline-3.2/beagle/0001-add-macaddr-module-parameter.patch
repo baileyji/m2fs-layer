@@ -1,0 +1,183 @@
+From d5607d3b2185a6a6d6417b88146a43adacc7ea2e Mon Sep 17 00:00:00 2001
+From: Danny Kukawka <danny.kukawka@bisect.de>
+Date: Fri, 20 Jan 2012 14:26:51 +0000
+Subject: [PATCH] add macaddr module parameter
+
+Added smsc95xx.macaddr module parameter to allow the user to
+change the MAC address on boot if there was no MAC on the EEPROM.
+
+The parameter take the MAC address in 01:23:45:67:89:ab format and
+needs to be locally assigned. The MAC get assigned to the first
+smsc95xx device with no MAC on EEPROM (which resulted in a random
+MAC before). If there are more than one device without MAC on
+EEPROM and the user needs set the MAC to a specific device, it
+can be done by attaching the netdev name (e.g. eth0) to the
+smsc95xx.macaddr parameter seperated by a ';' as e.g. in
+'01:23:45:67:89:ab;eth0'
+
+This allows e.g. u-boot to pass on PandaBoard or BeagleBoard
+the by u-boot generated MAC address to the kernel device.
+
+This commit was based on a patch from Sebastien Jan <s-jan@ti.com>
+(commit 10f38b455e75b85f72e98786e5518cf7b0324634 at 
+ubuntu/ubuntu-maverick.git)
+
+Signed-off-by: Danny Kukawka <danny.kukawka@bisect.de>
+---
+ drivers/net/usb/smsc95xx.c |  104 ++++++++++++++++++++++++++++++++++++++++++-
+ 1 files changed, 101 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/usb/smsc95xx.c b/drivers/net/usb/smsc95xx.c
+index d45520e..3ca892d 100644
+--- a/drivers/net/usb/smsc95xx.c
++++ b/drivers/net/usb/smsc95xx.c
+@@ -46,12 +46,16 @@
+ #define SMSC95XX_INTERNAL_PHY_ID	(1)
+ #define SMSC95XX_TX_OVERHEAD		(8)
+ #define SMSC95XX_TX_OVERHEAD_CSUM	(12)
++#define MAC_ADDR_LEN			(6)
++#define MAX_PARAM_LENGTH		(64)
+ 
+ struct smsc95xx_priv {
+ 	u32 mac_cr;
+ 	u32 hash_hi;
+ 	u32 hash_lo;
+ 	spinlock_t mac_cr_lock;
++	bool mac_set_from_param;
++	bool mac_is_random;
+ };
+ 
+ struct usb_context {
+@@ -63,6 +67,11 @@ static bool turbo_mode = true;
+ module_param(turbo_mode, bool, 0644);
+ MODULE_PARM_DESC(turbo_mode, "Enable multiple frames per Rx transaction");
+ 
++static char macaddr_param[MAX_PARAM_LENGTH];
++static bool set_macaddr = false;
++module_param_string(macaddr, macaddr_param, MAX_PARAM_LENGTH, 0);
++MODULE_PARM_DESC(macaddr, " macaddr=macaddr;[tgt-netdevname] (Set MAC only if there is a device without MAC on EEPROM)");
++
+ static int smsc95xx_read_reg(struct usbnet *dev, u32 index, u32 *data)
+ {
+ 	u32 *buf = kmalloc(4, GFP_KERNEL);
+@@ -601,8 +610,88 @@ static int smsc95xx_ioctl(struct net_device *netdev, struct ifreq *rq, int cmd)
+ 	return generic_mii_ioctl(&dev->mii, if_mii(rq), cmd, NULL);
+ }
+ 
++/* set mac address from the macaddr module parameter */
++static int smsc95xx_init_mac_address_from_param(struct usbnet *dev)
++{
++	struct smsc95xx_priv *pdata = (struct smsc95xx_priv *)(dev->data[0]);
++	int i, j, got_num, num, parsed;
++	u8 mtbl[MAC_ADDR_LEN];
++	char *input;
++	char *config_param;
++	char *netdev_name = NULL;	
++
++	parsed = 0;
++	i = 0;
++	j = 0;
++	input = macaddr_param;
++
++	if (input && strnlen(input, MAX_PARAM_LENGTH)) {
++		while ((config_param = strsep(&input, ";"))) {
++			if (parsed == 0) {
++				num = 0;
++				got_num = 0;
++				while (j < MAC_ADDR_LEN) {
++					if (config_param[i] && config_param[i] != ':') {
++						got_num++;
++						if ('0' <= config_param[i] && config_param[i] <= '9') {
++							num = num * 16 + config_param[i] - '0';
++						} else if ('A' <= config_param[i] && config_param[i] <= 'F') {
++							num = num * 16 + 10 + config_param[i] - 'A';
++						} else if ('a' <= config_param[i] && config_param[i] <= 'f') {
++							num = num * 16 + 10 + config_param[i] - 'a';
++						} else {
++							break;
++						}
++						i++;
++					} else if (got_num == 2) {
++						mtbl[j++] = (u8) num;
++						num = 0;
++						got_num = 0;
++						i++;
++					} else {
++						break;
++					}
++				}
++			} else {
++				netdev_name = config_param;					
++			}
++			parsed ++;
++		}
++
++		if (j == MAC_ADDR_LEN) {
++			if (netdev_name && strlen(netdev_name)) {
++				if (strcmp(netdev_name, dev->net->name) != 0) {
++					printk(KERN_DEBUG "%s : parsed devname: '%s', current devname is '%s'\n", __func__, netdev_name, dev->net->name);
++					return 0;	
++				}
++			}
++
++			for (i = 0; i < MAC_ADDR_LEN; i++) {
++				dev->net->dev_addr[i] = mtbl[i];
++			}
++			
++			printk(KERN_DEBUG "%s : set MAC from kernel smsc95xx.macaddr '%pM'\n", __func__, dev->net->dev_addr);
++
++			if (is_valid_ether_addr(dev->net->dev_addr)) {
++				printk(KERN_DEBUG "%s : set MAC address '%pM' is VALID\n", __func__, dev->net->dev_addr);
++				netif_dbg(dev, ifup, dev->net, "set valid MAC address from smsc95xx.macaddr\n");
++				set_macaddr = true;
++				pdata->mac_set_from_param = true;
++				pdata->mac_is_random = false;
++				return 1;
++			}
++		}
++	} 
++
++	printk(KERN_DEBUG "%s : failed to parse MAC from smsc95xx.macaddr, don't try again.\n", __func__);
++	set_macaddr = true;
++	return 0;
++}
++
+ static void smsc95xx_init_mac_address(struct usbnet *dev)
+ {
++	struct smsc95xx_priv *pdata = (struct smsc95xx_priv *)(dev->data[0]);	
++
+ 	/* try reading mac address from EEPROM */
+ 	if (smsc95xx_read_eeprom(dev, EEPROM_MAC_OFFSET, ETH_ALEN,
+ 			dev->net->dev_addr) == 0) {
+@@ -615,16 +704,25 @@ static void smsc95xx_init_mac_address(struct usbnet *dev)
+ 
+ 	/* no eeprom, or eeprom values are invalid. generate random MAC */
+ 	random_ether_addr(dev->net->dev_addr);
++	pdata->mac_is_random = true;
+ 	netif_dbg(dev, ifup, dev->net, "MAC address set to random_ether_addr\n");
+ }
+ 
+ static int smsc95xx_set_mac_address(struct usbnet *dev)
+ {
+-	u32 addr_lo = dev->net->dev_addr[0] | dev->net->dev_addr[1] << 8 |
+-		dev->net->dev_addr[2] << 16 | dev->net->dev_addr[3] << 24;
+-	u32 addr_hi = dev->net->dev_addr[4] | dev->net->dev_addr[5] << 8;
++	struct smsc95xx_priv *pdata = (struct smsc95xx_priv *)(dev->data[0]);
++	u32 addr_lo, addr_hi;
+ 	int ret;
+ 
++	if (pdata->mac_is_random && !pdata->mac_set_from_param && !set_macaddr) {
++		printk(KERN_DEBUG "%s : random MAC address, not yet set from smsc95xx.macaddr, try to set it ...\n", __func__);
++		smsc95xx_init_mac_address_from_param(dev);
++	}
++
++	addr_lo = dev->net->dev_addr[0] | dev->net->dev_addr[1] << 8 |
++		dev->net->dev_addr[2] << 16 | dev->net->dev_addr[3] << 24;
++	addr_hi = dev->net->dev_addr[4] | dev->net->dev_addr[5] << 8;
++
+ 	ret = smsc95xx_write_reg(dev, ADDRL, addr_lo);
+ 	if (ret < 0) {
+ 		netdev_warn(dev->net, "Failed to write ADDRL: %d\n", ret);
+-- 
+1.7.7.3
+

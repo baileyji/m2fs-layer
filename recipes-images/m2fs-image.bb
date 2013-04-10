@@ -15,6 +15,7 @@ IMAGE_INSTALL += " \
   python-setuptools \
   python-misc \
   vim \
+  nut \
   gdb \
   git \
   kernel-modules \
@@ -28,7 +29,10 @@ IMAGE_INSTALL += " \
   nfs-utils \
   samba \
   connman-tests \
-  task-native-sdk \
+  procps \
+  packagegroup-sdk-target \
 "
+#  task-native-sdk \
+#"
 
 export IMAGE_BASENAME = "m2fs-image"

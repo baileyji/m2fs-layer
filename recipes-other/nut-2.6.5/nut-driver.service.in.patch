@@ -1,0 +1,22 @@
+--- nut-2.6.5/configure.in	2012-08-06 05:37:36.000000000 -0700
++++ nut-2.6.5/configure.in	2013-04-10 14:45:24.292000001 -0700
+@@ -1121,6 +1121,7 @@
+ AC_SUBST(STATEPATH)
+ AC_SUBST(CONFPATH)
+ AC_SUBST(BINDIR)
++AC_SUBST(DRVPATH)
+ AC_SUBST(SBINDIR)
+ AC_SUBST(PORT)
+ AC_SUBST(RUN_AS_USER)
+--- nut-2.6.5/scripts/systemd/nut-driver.service.in	2012-07-31 10:38:56.000000000 -0700
++++ nut-2.6.5/scripts/systemd/nut-driver.service.in	2013-04-10 14:05:05.084000048 -0700
+@@ -4,7 +4,7 @@
+ StopWhenUnneeded=yes
+ 
+ [Service]
+-ExecStart=@driverexecdir@/upsdrvctl start
+-ExecStop=@driverexecdir@/upsdrvctl stop
++ExecStart=@BINDIR@/upsdrvctl start
++ExecStop=@BINDIR@/upsdrvctl stop
+ Type=forking
+
